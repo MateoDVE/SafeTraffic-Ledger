@@ -40,3 +40,124 @@
 (define-data-var reveal-deadline-min uint u30) 
 
 (define-data-var incident-id-counter uint u1)
+
+(define-map agents principal bool)
+(define-constant AGENT-PRINCIPAL tx-sender)
+(define-constant AUDITOR-PRINCIPAL tx-sender)
+
+
+
+
+(define-public (commit-incident 
+  (evidence-hash (buff 32)) 
+  (meta-hash (buff 32)) 
+  (geo-hash (buff 32))
+  (type uint)
+)
+  (let(
+    (new-id (var-get incident-id-counter))
+  )
+    (asserts! (is-eq tx-sender AGENT-PRINCIPAL) ERR-NOT-AUTHORIZED)
+    
+    (map-set incidents-data new-id
+        {
+          proposer: tx-sender,
+          evidence-hash: evidence-hash,
+          meta-hash: meta-hash,
+          geo-hash: geo-hash,
+          status: PENDING,
+          commit-height: (get block-height),
+          reveral-cid: ""
+        }
+      )
+      (var-set incident-id-counter (+ new-id u1))
+      (ok (print (tuple (event-name "Committed" ) (id new-id) (proposer tx-sender))))
+    )
+  )
+)
+
+
+(define-public (reveal-incident 
+  (id uint)
+  (cid (string-ascii 64))
+  (meta-hash-check (buff 32))
+  (salt (buff 32))
+  (evidence-hash-check (buff 32))
+)
+  (let (
+    (incident (map-get? incidents-data incidents-data))
+  )
+    (asserts! (is-some incident) ERR-ID-NOT-FOUND)
+    (asserts! (is-eq (get-status (unwrap-panic incident)) PENDING) ERR-INVALID-STATE)
+
+    (let (
+      (commit-height (get commit-height (unwrap-panic incident)))
+      (deadline-blocks (* (var-get reveal-deadline-min) u6))
+    )
+      (asserts! (<= (+ commit-height deadline-blocks) (get block-height)) ERR-DEADLINE-EXPIRED)
+    )
+  )
+)
+
+
+(define-public (add-whistle
+  (id uint)
+  (whash (buff 32))
+) 
+  (asserts! (is-some (map-get? incidents-data id)) ERR-ID-NOT-FOUND)
+  
+  (map-set whistle-data id {whash: whash})
+  
+  (ok (print (tuple (event-name "Whistle") (id id))))
+)
+
+
+(define-public (open-dispute
+  (id uint)
+  (reason-hash (buff 32))
+)
+  (let (
+    (incident (map-get? incidents-data id))
+  )
+    (asserts! (is-eq tx-sender AUDITOR-PRINCIPAL) ERR-NOT-AUTHORIZED)
+    (asserts! (is-some incident) ERR-ID-NOT-FOUND)
+
+    (asserts! (is-eq (get status (unwrap-panic incident)) REVEALED) ERR-INVALID-STATE)
+
+    (map-set incidents-data id (merge (unwrap-panic incident) {status: DISPUTED}))
+
+    (ok (print (tuple (event-name "Disputed") (id id) (reason-hash reason-hash))))
+    )
+)
+
+
+define-public (resolve-dispute
+  (id uint)
+  (new-status uint) ;; Debería ser RESOLVED (u3) o STALE (u4) en el caso de no revelación a tiempo
+)
+  (let (
+    (incident (map-get? incidents-data id))
+  )
+    (asserts! (is-eq tx-sender AUDITOR-PRINCIPAL) ERR-NOT-AUTHORIZED)
+    (asserts! (is-some incident) ERR-ID-NOT-FOUND)
+
+
+    (asserts! (is-eq (get status (unwrap-panic incident)) DISPUTED) ERR-INVALID-STATE)
+    (asserts! (or (is-eq new-status RESOLVED) (is-eq new-status STALE)) ERR-INVALID-STATE)
+
+    (map-set incidents-data id (merge (unwrap-panic incident) {status: new-status}))
+    
+    (ok (print (tuple (event-name "Resolved") (id id) (new-status new-status))))
+    )
+)
+
+
+
+(define-read-only (get-incident-by-id (id uint))
+    (ok (map-get? incidents-data id))
+)
+
+
+(define-read-only (get-reveal-deadline-min)
+    (ok (var-get reveal-deadline-min))
+)
