@@ -1,5 +1,5 @@
 ;; ----------------------------------------------------------------------
-;; Contrato: IncidentRegistry
+;; Contrato: incident_registry
 ;; Descripción: Gestiona el registro inmutable y transparente de incidentes
 ;; viales (multas, accidentes) mediante el modelo Commit-Reveal en Stacks.
 ;; Autores: SafeTraffic Ledger
