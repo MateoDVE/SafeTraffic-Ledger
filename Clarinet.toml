@@ -1,40 +1,11 @@
 [project]
-# Nombre de tu proyecto
 name = 'SafeTraffic-Ledger'
-# Versión de la VM de Clarity (se recomienda la más reciente)
 epoch = '2.4' 
-# Versión de Clarity utilizada
 clarity-version = 2
 
 [contracts]
-# Define tu contrato para que Clarinet lo reconozca
-# La clave (incident_registry) es el nombre que tendrá en la blockchain.
-# El valor de path debe coincidir con la ruta de tu archivo.
 incident_registry = { path = "Back/Contracts/incident_registry.clar" }
 
 [repl]
-# Configuración para la consola interactiva (opcional, pero útil)
 enable_trace_strings = true
 pass_by_value = true
-
-[accounts]
-# Define cuentas de prueba para el desarrollo local (REPL)
-# Estas cuentas NO se usan para el despliegue a Testnet o Mainnet.
-# La primera cuenta es el deployer local por defecto.
-deployer = { initial-balance = "100000000000000" }
-agent-1 = { initial-balance = "100000000000000" }
-auditor-1 = { initial-balance = "100000000000000" }
-
-[settings.testnet]
-# Configuración para el despliegue a Stacks Testnet
-# Define la cuenta que se usará como "deployer" para la Testnet.
-# Debes reemplazar 'TU-CLAVE-PRIVADA-AQUÍ' con la clave privada de la cuenta
-# que deseas usar para pagar el despliegue y que está configurada en tu wallet Leather.
-# (¡CUIDADO! Nunca compartas tu clave privada).
-# El valor de la 'address' debe coincidir con la dirección de esa clave.
-# Si tu clave es "K..." (principal), asegúrate de que la dirección comienza con "ST...".
-deployer = { key = "TU-CLAVE-PRIVADA-AQUÍ", address = "TU-DIRECCIÓN-STX-AQUÍ" }
-
-[settings.mainnet]
-# Configuración para el despliegue a Stacks Mainnet (cuando estés listo)
-# deployer = { key = "TU-CLAVE-PRIVADA-AQUÍ", address = "TU-DIRECCIÓN-STX-AQUÍ" }
