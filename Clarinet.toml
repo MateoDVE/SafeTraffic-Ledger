@@ -5,15 +5,18 @@ description = "Gestiona el registro inmutable y transparente de incidentes viale
 telemetry = true
 cache_dir = "./.cache"
 
-# Tu contrato no parece tener requisitos de otros contratos (traits o implementaciones externas)
-# por lo que esta sección se omite. Si más adelante añades un trait, deberás incluirlo aquí.
+# Si tu contrato estuviera en Stacks 2.0 (Clarity 1), usarías 'epoch = 2.4'. 
+# Para proyectos modernos, 'epoch = 2.5' o superior es común.
+epoch = 2.5 
+
+# No hay dependencias de otros contratos (traits o implementaciones) en el código proporcionado.
 # [[project.requirements]]
-# contract_id = "..." 
+# contract_id = "SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.some-trait" 
 
 [contracts.incident-registry]
-path = "Back\Contracts\incident_registry.clar"
-clarity_version = 2 # Asumiendo Clarity 2, ya que Clarity 3 aún no es el estándar común.
-epoch = 2.4 # Estableciendo una epoch compatible con Clarity 2.
+path = "Back/Contracts/incident_registry.clar"
+# La versión 2 de Clarity es la actual y compatible con tu código.
+clarity_version = 2
 
 [repl.analysis]
 passes = ["check_checker"]
@@ -23,3 +26,7 @@ strict = false
 trusted_sender = true
 trusted_caller = false
 callee_filter = false
+
+[settings]
+# Configuración común para la red principal y la red de prueba
+cost_limit = 100000000
