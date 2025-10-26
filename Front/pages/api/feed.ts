@@ -1,20 +1,81 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import { useEffect, useMemo, useState } from 'react';
+import NavBar from '../components/NavBar';
+import { fetchFeed } from '../lib/api';
+import { Incident, IncidentState, addIncident, getLocalFeed, onFeedChange } from '../lib/store';
 
-type Item = {
-  id: string;
-  state: 'pending' | 'revealed' | 'disputed' | 'stale';
-  evidenceHash: string;
-  cid?: string;
-  timestamp?: string;
+const ES_TO_STATE: Record<string, IncidentState> = {
+  'Pendiente': 'pending',
+  'Disputado': 'disputed',
+  'Revelado':  'revealed',
+  'Resuelto':  'resolved',
+  'Stale':     'stale',
 };
 
-// 👇 Esto es lo importante: export default function handler
-export default function handler(req: NextApiRequest, res: NextApiResponse<Item[]>) {
-  const data: Item[] = [
-    { id: '1001', state: 'pending',  evidenceHash: '0xabc123...pending',  timestamp: new Date().toISOString() },
-    { id: '1000', state: 'revealed', evidenceHash: '0xdef456...revealed', cid: 'bafybeigd...', timestamp: new Date(Date.now()-3600_000).toISOString() },
-    { id: '0999', state: 'disputed', evidenceHash: '0x999aaa...disputed', timestamp: new Date(Date.now()-2*3600_000).toISOString() },
-  ];
-
-  res.status(200).json(data);
+function badgeClass(s: IncidentState) {
+  return {
+    pending:  'bg-yellow-500 text-black',
+    revealed: 'bg-green-600 text-white',
+    disputed: 'bg-red-600 text-white',
+    resolved: 'bg-emerald-600 text-white',
+    stale:    'bg-slate-500 text-white',
+  }[s];
 }
+
+type BlockchainIncident = {
+  id: string; // ID numérico del incidente
+  state: IncidentState;
+  evidenceHash: string;
+  cid?: string;
+  timestamp: string;
+};
+
+export default function FeedPage() {
+  const [blockchainItems, setBlockchainItems] = useState<BlockchainIncident[]>([]);
+  const [localItems, setLocalItems] = useState<Incident[]>(getLocalFeed());
+  const [stateFilter, setStateFilter] = useState<string>('Todos los estados');
+
+  // Cargar feed de la blockchain y sincronizar cambios locales
+  useEffect(() => {
+    (async () => {
+      const items = await fetchFeed();
+      setBlockchainItems(items.map(i => ({
+        id: i.id, 
+        state: i.state as IncidentState, 
+        evidenceHash: i.evidenceHash, 
+        cid: i.cid,
+        timestamp: i.timestamp || new Date().toISOString(),
+      })));
+    })();
+    const off = onFeedChange(() => setLocalItems(getLocalFeed()));
+    return off;
+  }, []);
+
+  const items = useMemo(() => {
+    // 1. Crear un mapa para buscar rápidamente los datos locales por ID.
+    const localMap = localItems.reduce((acc, curr) => {
+        // Usar solo el ID numérico del formato 'INC-XXXX-0001'
+        const idNum = curr.id.split('-').pop()?.padStart(4, '0');
+        if (idNum) acc[idNum] = curr;
+        return acc;
+    }, {} as Record<string, Incident>);
+    
+    // 2. Fusionar los datos de la blockchain con los detalles locales (title, location, plate)
+    const merged: Incident[] = blockchainItems.map(bcItem => {
+        const localDetails = localMap[bcItem.id];
+        
+        return {
+            ...localDetails, 
+            ...bcItem,
+            
+            id: localDetails?.id || `INC-????-${bcItem.id}`, 
+            title: localDetails?.title || 'Incidente Desconocido',
+            location: localDetails?.location || 'Ubicación Desconocida',
+            plate: localDetails?.plate || 'Placa Desconocida',
+        } as Incident;
+    });
+
+    // 3. Aplicar filtro de estado
+    if (stateFilter === 'Todos los estados') return merged;
+    const want = ES_TO_STATE[stateFilter];
+    return merged.filter(i => i.state === want);
+  }, [localItems, blockchainItems, stateFilter]);
