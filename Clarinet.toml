@@ -1,24 +1,16 @@
-[project]
-name = "incident-registry"
-authors = ["Mateo Vargas, David Zema, Fabio Garcia Mesa"]
-description = "Registro de incidentes en blockchain con Clarity"
-telemetry = true
-cache_dir = "./.cache"
+# Clarinet configuration for SafeTraffic-Ledger
+# Maps local/testnet networks and project contracts for deployment
 
-# Si tu contrato depende de otros (por ejemplo traits u otros contratos en mainnet/testnet), añádelos aquí
-# [[project.requirements]]
-# contract_id = "SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.nft-trait"
+name = "SafeTraffic-Ledger"
 
-[contracts.incident-registry]
-path = "Back/contracts/incident_registry.clar"
-clarity_version = 3
-epoch = 3.0
+[networks.local]
+# Local Clarinet/Regtest node
+url = "http://127.0.0.1:20443"
 
-[repl.analysis]
-passes = ["check_checker"]
+[networks.testnet]
+# Stacks testnet (public API) — used for non-local deploys
+url = "https://stacks-testnet-api.blockstack.org"
 
-[repl.analysis.check_checker]
-strict = false
-trusted_sender = true
-trusted_caller = false
-callee_filter = false
+# Contract mappings: key = deployed contract name, value = path to .clar file
+[contracts]
+incident-registry = "Back/Contracts/incident_registry.clar"
