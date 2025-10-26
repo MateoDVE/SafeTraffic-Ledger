@@ -23,7 +23,7 @@
   {
       whash: (buff 32),
   }
-))
+)
 
 (define-constant PENDING u0)
 (define-constant REVEALED u1)
@@ -54,7 +54,7 @@
   (geo-hash (buff 32))
   (type uint)
 )
-  (let(
+(let(
     (new-id (var-get incident-id-counter))
   )
     (asserts! (is-eq tx-sender AGENT-PRINCIPAL) ERR-NOT-AUTHORIZED)
@@ -73,8 +73,7 @@
       (var-set incident-id-counter (+ new-id u1))
       (ok (print (tuple (event-name "Committed" ) (id new-id) (proposer tx-sender))))
     )
-  )
-)
+  )  
 
 
 (define-public (reveal-incident 
@@ -135,7 +134,7 @@ define-public (resolve-dispute
   (id uint)
   (new-status uint) ;; Debería ser RESOLVED (u3) o STALE (u4) en el caso de no revelación a tiempo
 )
-  (let (
+(let (
     (incident (map-get? incidents-data id))
   )
     (asserts! (is-eq tx-sender AUDITOR-PRINCIPAL) ERR-NOT-AUTHORIZED)
@@ -148,8 +147,8 @@ define-public (resolve-dispute
     (map-set incidents-data id (merge (unwrap-panic incident) {status: new-status}))
     
     (ok (print (tuple (event-name "Resolved") (id id) (new-status new-status))))
-    )
-)
+    )  
+
 
 
 
