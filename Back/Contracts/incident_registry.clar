@@ -22,7 +22,7 @@
   uint
   {
       whash: (buff 32),
-  }
+    }
 )
 
 (define-constant PENDING u0)
@@ -41,11 +41,10 @@
 
 (define-data-var incident-id-counter uint u1)
 
-(define-map agents principal bool)
-(define-constant AGENT-PRINCIPAL tx-sender)
-(define-constant AUDITOR-PRINCIPAL tx-sender)
-
-
+;; CAMBIO CRÍTICO #1: Se usan define-data-var para almacenar la principal del deployer,
+;; ya que tx-sender solo se conoce en tiempo de ejecución.
+(define-data-var AGENT-PRINCIPAL principal tx-sender)
+(define-data-var AUDITOR-PRINCIPAL principal tx-sender)
 
 
 (define-public (commit-incident 
@@ -57,7 +56,8 @@
 (let(
     (new-id (var-get incident-id-counter))
   )
-    (asserts! (is-eq tx-sender AGENT-PRINCIPAL) ERR-NOT-AUTHORIZED)
+    ;; CAMBIO CRÍTICO #2: Se usa var-get para acceder a la dirección del agente.
+    (asserts! (is-eq tx-sender (var-get AGENT-PRINCIPAL)) ERR-NOT-AUTHORIZED)
     
     (map-set incidents-data new-id
         {
@@ -73,8 +73,7 @@
       (var-set incident-id-counter (+ new-id u1))
       (ok (print (tuple (event-name "Committed" ) (id new-id) (proposer tx-sender))))
     )
-  )  
-
+  ) 
 
 (define-public (reveal-incident 
   (id uint)
@@ -84,16 +83,37 @@
   (evidence-hash-check (buff 32))
 )
   (let (
-    (incident (map-get? incidents-data incidents-data))
+    ;; CAMBIO CRÍTICO #3: map-get? necesita la clave (id), no el nombre del mapa.
+    (incident (map-get? incidents-data id))
   )
     (asserts! (is-some incident) ERR-ID-NOT-FOUND)
-    (asserts! (is-eq (get-status (unwrap-panic incident)) PENDING) ERR-INVALID-STATE)
 
     (let (
-      (commit-height (get commit-height (unwrap-panic incident)))
-      (deadline-blocks (* (var-get reveal-deadline-min) u6))
+      (unwrapped-incident (unwrap-panic incident))
     )
-      (asserts! (<= (+ commit-height deadline-blocks) (get block-height)) ERR-DEADLINE-EXPIRED)
+      ;; Se usa get status para acceder al campo del mapa.
+      (asserts! (is-eq (get status unwrapped-incident) PENDING) ERR-INVALID-STATE)
+
+      (let (
+        ;; Se usa get commit-height para acceder al campo del mapa.
+        (commit-height (get commit-height unwrapped-incident))
+        (deadline-blocks (* (var-get reveal-deadline-min) u6))
+      )
+        ;; CAMBIO CRÍTICO #4: El commit-reveal debe ser antes del deadline. 
+        ;; La condición de un plazo expirado es si la altura del bloque es MAYOR
+        ;; o igual a la altura de compromiso más la altura límite.
+        ;; (<= (+ commit-height deadline-blocks) (get block-height)) significa que ¡HA EXPIRADO!
+        ;; Para permitir la revelación (mientras no expira), la condición debe ser:
+        (asserts! (< (get block-height) (+ commit-height deadline-blocks)) ERR-DEADLINE-EXPIRED)
+      )
+      
+      ;; Lógica de verificación de hash y actualización de estado (no estaba implementada)
+      ;; ...
+      
+      ;; Aquí faltaría la lógica para verificar meta-hash, evidence-hash y actualizar el estado a REVEALED
+      ;; (map-set incidents-data id (merge unwrapped-incident {status: REVEALED, reveral-cid: cid}))
+      ;; (ok true)
+      (ok true) ;; Placeholder
     )
   )
 )
@@ -118,7 +138,8 @@
   (let (
     (incident (map-get? incidents-data id))
   )
-    (asserts! (is-eq tx-sender AUDITOR-PRINCIPAL) ERR-NOT-AUTHORIZED)
+    ;; CAMBIO CRÍTICO #2: Se usa var-get para acceder a la dirección del auditor.
+    (asserts! (is-eq tx-sender (var-get AUDITOR-PRINCIPAL)) ERR-NOT-AUTHORIZED)
     (asserts! (is-some incident) ERR-ID-NOT-FOUND)
 
     (asserts! (is-eq (get status (unwrap-panic incident)) REVEALED) ERR-INVALID-STATE)
@@ -130,14 +151,15 @@
 )
 
 
-define-public (resolve-dispute
+(define-public (resolve-dispute
   (id uint)
   (new-status uint) ;; Debería ser RESOLVED (u3) o STALE (u4) en el caso de no revelación a tiempo
 )
 (let (
     (incident (map-get? incidents-data id))
   )
-    (asserts! (is-eq tx-sender AUDITOR-PRINCIPAL) ERR-NOT-AUTHORIZED)
+    ;; CAMBIO CRÍTICO #2: Se usa var-get para acceder a la dirección del auditor.
+    (asserts! (is-eq tx-sender (var-get AUDITOR-PRINCIPAL)) ERR-NOT-AUTHORIZED)
     (asserts! (is-some incident) ERR-ID-NOT-FOUND)
 
 
@@ -147,9 +169,8 @@ define-public (resolve-dispute
     (map-set incidents-data id (merge (unwrap-panic incident) {status: new-status}))
     
     (ok (print (tuple (event-name "Resolved") (id id) (new-status new-status))))
-    )  
-
-
+    ) 
+)
 
 
 (define-read-only (get-incident-by-id (id uint))
