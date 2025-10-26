@@ -1,16 +1,25 @@
-# Clarinet configuration for SafeTraffic-Ledger
-# Maps local/testnet networks and project contracts for deployment
+[project]
+name = "incident-registry-project"
+authors = ["SafeTraffic Ledger"]
+description = "Gestiona el registro inmutable y transparente de incidentes viales (multas, accidentes) mediante el modelo Commit-Reveal en Stacks."
+telemetry = true
+cache_dir = "./.cache"
 
-name = "SafeTraffic-Ledger"
+# Tu contrato no parece tener requisitos de otros contratos (traits o implementaciones externas)
+# por lo que esta sección se omite. Si más adelante añades un trait, deberás incluirlo aquí.
+# [[project.requirements]]
+# contract_id = "..." 
 
-[networks.local]
-# Local Clarinet/Regtest node
-url = "http://127.0.0.1:20443"
+[contracts.incident-registry]
+path = "contracts/incident_registry.clar"
+clarity_version = 2 # Asumiendo Clarity 2, ya que Clarity 3 aún no es el estándar común.
+epoch = 2.4 # Estableciendo una epoch compatible con Clarity 2.
 
-[networks.testnet]
-# Stacks testnet (public API) — used for non-local deploys
-url = "https://stacks-testnet-api.blockstack.org"
+[repl.analysis]
+passes = ["check_checker"]
 
-# Contract mappings: key = deployed contract name, value = path to .clar file
-[contracts]
-incident-registry = "Back/Contracts/incident_registry.clar"
+[repl.analysis.check_checker]
+strict = false
+trusted_sender = true
+trusted_caller = false
+callee_filter = false
