@@ -1,183 +1,249 @@
 ;; ----------------------------------------------------------------------
 ;; Contrato: incident_registry
-;; Descripción: Gestiona el registro inmutable y transparente de incidentes
-;; viales (multas, accidentes) mediante el modelo Commit-Reveal en Stacks.
+;; Descripción: Registro inmutable de incidentes viales con Commit–Reveal
 ;; Autores: SafeTraffic Ledger
 ;; ----------------------------------------------------------------------
+
+;; ---------------------------
+;; Storage
+;; ---------------------------
 
 (define-map incidents-data
   uint
   {
-      proposer: principal,
-      evidence-hash: (buff 32),
-      meta-hash: (buff 32),
-      geo-hash: (buff 32),
-      status: uint,
-      commit-height: uint,
-      reveral-cid: (string-ascii 64)
-    }
+    proposer: principal,
+    evidence-hash: (buff 32),
+    meta-hash: (buff 32),
+    geo-hash: (buff 32),
+    status: uint,
+    commit-height: uint,
+    reveal-cid: (string-ascii 64),
+    incident-type: uint
+  }
 )
 
 (define-map whistle-data
   uint
   {
-      whash: (buff 32),
-    }
+    whash: (buff 32)
+  }
 )
 
-(define-constant PENDING u0)
+(define-constant PENDING  u0)
 (define-constant REVEALED u1)
 (define-constant DISPUTED u2)
 (define-constant RESOLVED u3)
-(define-constant STALE u4)
+(define-constant STALE    u4)
 
-(define-constant ERR-NOT-AUTHORIZED (err u100))
-(define-constant ERR-INVALID-STATE (err u101))
+(define-constant ERR-NOT-AUTHORIZED  (err u100))
+(define-constant ERR-INVALID-STATE   (err u101))
 (define-constant ERR-DEADLINE-EXPIRED (err u102))
-(define-constant ERR-INVALID-HASH (err u103))
-(define-constant ERR-ID-NOT-FOUND (err u104))
+(define-constant ERR-INVALID-HASH    (err u103))
+(define-constant ERR-ID-NOT-FOUND    (err u104))
+(define-constant ERR-ALREADY-SET     (err u105))
 
-(define-data-var reveal-deadline-min uint u30) 
+;; Guardamos el deadline directamente en BLOQUES (no minutos)
+(define-data-var reveal-deadline-blocks uint u30)
 
-(define-data-var incident-id-counter uint u1)
+(define-data-var incident-id-counter uint u0)
 
-;; CAMBIO CRÍTICO #1: Se usan define-data-var para almacenar la principal del deployer,
-;; ya que tx-sender solo se conoce en tiempo de ejecución.
-(define-data-var AGENT-PRINCIPAL principal tx-sender)
-(define-data-var AUDITOR-PRINCIPAL principal tx-sender)
+;; Owner del contrato (primer caller que llame a init-owner)
+(define-data-var CONTRACT-OWNER (optional principal) none)
 
+;; Agente y Auditor configurables una sola vez por el owner
+(define-data-var AGENT-PRINCIPAL   (optional principal) none)
+(define-data-var AUDITOR-PRINCIPAL (optional principal) none)
 
-(define-public (commit-incident 
-  (evidence-hash (buff 32)) 
-  (meta-hash (buff 32)) 
-  (geo-hash (buff 32))
-  (type uint)
+;; ---------------------------
+;; Utils
+;; ---------------------------
+
+(define-read-only (is-owner (p principal))
+  (ok (is-eq (some p) (var-get CONTRACT-OWNER)))
 )
-(let(
-    (new-id (var-get incident-id-counter))
-  )
-    ;; CAMBIO CRÍTICO #2: Se usa var-get para acceder a la dirección del agente.
-    (asserts! (is-eq tx-sender (var-get AGENT-PRINCIPAL)) ERR-NOT-AUTHORIZED)
-    
-    (map-set incidents-data new-id
-        {
-          proposer: tx-sender,
-          evidence-hash: evidence-hash,
-          meta-hash: meta-hash,
-          geo-hash: geo-hash,
-          status: PENDING,
-          commit-height: (get block-height),
-          reveral-cid: ""
-        }
-      )
-      (var-set incident-id-counter (+ new-id u1))
-      (ok (print (tuple (event-name "Committed" ) (id new-id) (proposer tx-sender))))
-    )
-  ) 
 
-(define-public (reveal-incident 
-  (id uint)
-  (cid (string-ascii 64))
-  (meta-hash-check (buff 32))
-  (salt (buff 32))
-  (evidence-hash-check (buff 32))
+(define-read-only (unwrap-some! (opt (optional principal)))
+  (match opt p (ok p) (err false))
+)
+
+(define-private (assert-owner)
+  (begin
+    (asserts! (is-eq (ok true) (is-owner tx-sender)) ERR-NOT-AUTHORIZED)
+    (ok true))
+)
+
+(define-private (assert-principal-is (who (optional principal)))
+  (let ((p (var-get who)))
+    (asserts! (is-some p) ERR-NOT-AUTHORIZED)
+    (asserts! (is-eq tx-sender (unwrap! p ERR-NOT-AUTHORIZED)) ERR-NOT-AUTHORIZED)
+    (ok true))
+)
+
+;; ---------------------------
+;; Inicialización (one-shot)
+;; ---------------------------
+
+(define-public (init-owner)
+  (begin
+    (asserts! (is-none (var-get CONTRACT-OWNER)) ERR-ALREADY-SET)
+    (var-set CONTRACT-OWNER (some tx-sender))
+    (ok true))
+)
+
+(define-public (set-agent (p principal))
+  (begin
+    (unwrap! (assert-owner) false)
+    (asserts! (is-none (var-get AGENT-PRINCIPAL)) ERR-ALREADY-SET)
+    (var-set AGENT-PRINCIPAL (some p))
+    (ok true))
+)
+
+(define-public (set-auditor (p principal))
+  (begin
+    (unwrap! (assert-owner) false)
+    (asserts! (is-none (var-get AUDITOR-PRINCIPAL)) ERR-ALREADY-SET)
+    (var-set AUDITOR-PRINCIPAL (some p))
+    (ok true))
+)
+
+(define-public (set-reveal-deadline-blocks (blocks uint))
+  (begin
+    (unwrap! (assert-owner) false)
+    (var-set reveal-deadline-blocks blocks)
+    (ok true))
+)
+
+;; ---------------------------
+;; Commit
+;; ---------------------------
+
+(define-public (commit-incident
+  (evidence-hash (buff 32))
+  (meta-hash     (buff 32))
+  (geo-hash      (buff 32))
+  (incident-type uint)
 )
   (let (
-    ;; CAMBIO CRÍTICO #3: map-get? necesita la clave (id), no el nombre del mapa.
-    (incident (map-get? incidents-data id))
+    (aid (var-get AGENT-PRINCIPAL))
+    (new-id (var-get incident-id-counter))
   )
-    (asserts! (is-some incident) ERR-ID-NOT-FOUND)
+    (asserts! (is-some aid) ERR-NOT-AUTHORIZED)
+    (asserts! (is-eq tx-sender (unwrap! aid ERR-NOT-AUTHORIZED)) ERR-NOT-AUTHORIZED)
 
-    (let (
-      (unwrapped-incident (unwrap-panic incident))
+    (map-set incidents-data new-id
+      {
+        proposer: tx-sender,
+        evidence-hash: evidence-hash,
+        meta-hash: meta-hash,
+        geo-hash: geo-hash,
+        status: PENDING,
+        commit-height: (block-height),
+        reveal-cid: "",
+        incident-type: incident-type
+      }
     )
-      ;; Se usa get status para acceder al campo del mapa.
-      (asserts! (is-eq (get status unwrapped-incident) PENDING) ERR-INVALID-STATE)
+    (var-set incident-id-counter (+ new-id u1))
+    (ok (print (tuple (event "Committed") (id new-id) (proposer tx-sender))))
+  )
+)
+
+;; ---------------------------
+;; Reveal
+;; ---------------------------
+
+(define-public (reveal-incident
+  (id uint)
+  (cid (string-ascii 64))
+  (meta-preimage (buff 32))
+  (evidence-preimage (buff 32))
+  (salt (buff 32))
+)
+  (let (
+    (opt (map-get? incidents-data id))
+  )
+    (asserts! (is-some opt) ERR-ID-NOT-FOUND)
+    (let ((row (unwrap-panic opt)))
+      (asserts! (is-eq (get status row) PENDING) ERR-INVALID-STATE)
 
       (let (
-        ;; Se usa get commit-height para acceder al campo del mapa.
-        (commit-height (get commit-height unwrapped-incident))
-        (deadline-blocks (* (var-get reveal-deadline-min) u6))
+        (commit-h (get commit-height row))
+        (deadline (+ commit-h (var-get reveal-deadline-blocks)))
       )
-        ;; CAMBIO CRÍTICO #4: El commit-reveal debe ser antes del deadline. 
-        ;; La condición de un plazo expirado es si la altura del bloque es MAYOR
-        ;; o igual a la altura de compromiso más la altura límite.
-        ;; (<= (+ commit-height deadline-blocks) (get block-height)) significa que ¡HA EXPIRADO!
-        ;; Para permitir la revelación (mientras no expira), la condición debe ser:
-        (asserts! (< (get block-height) (+ commit-height deadline-blocks)) ERR-DEADLINE-EXPIRED)
+        ;; permitimos reveal si AÚN no venció
+        (asserts! (< (block-height) deadline) ERR-DEADLINE-EXPIRED)
       )
-      
-      ;; Lógica de verificación de hash y actualización de estado (no estaba implementada)
-      ;; ...
-      
-      ;; Aquí faltaría la lógica para verificar meta-hash, evidence-hash y actualizar el estado a REVEALED
-      ;; (map-set incidents-data id (merge unwrapped-incident {status: REVEALED, reveral-cid: cid}))
-      ;; (ok true)
-      (ok true) ;; Placeholder
+
+      ;; Verificación de hashes: sha256(preimage ++ salt) == hash guardado
+      (let (
+        (meta-ok (is-eq (sha256 (concat meta-preimage salt)) (get meta-hash row)))
+        (ev-ok   (is-eq (sha256 (concat evidence-preimage salt)) (get evidence-hash row)))
+      )
+        (asserts! (and meta-ok ev-ok) ERR-INVALID-HASH)
+      )
+
+      (map-set incidents-data id (merge row {status: REVEALED, reveal-cid: cid}))
+      (ok (print (tuple (event "Revealed") (id id))))
     )
   )
 )
 
+;; ---------------------------
+;; Whistle
+;; ---------------------------
 
 (define-public (add-whistle
   (id uint)
   (whash (buff 32))
-) 
-  (asserts! (is-some (map-get? incidents-data id)) ERR-ID-NOT-FOUND)
-  
-  (map-set whistle-data id {whash: whash})
-  
-  (ok (print (tuple (event-name "Whistle") (id id))))
+)
+  (begin
+    (asserts! (is-some (map-get? incidents-data id)) ERR-ID-NOT-FOUND)
+    (map-set whistle-data id {whash: whash})
+    (ok (print (tuple (event "Whistle") (id id)))))
 )
 
+;; ---------------------------
+;; Dispute / Resolve
+;; ---------------------------
 
 (define-public (open-dispute
   (id uint)
   (reason-hash (buff 32))
 )
-  (let (
-    (incident (map-get? incidents-data id))
-  )
-    ;; CAMBIO CRÍTICO #2: Se usa var-get para acceder a la dirección del auditor.
-    (asserts! (is-eq tx-sender (var-get AUDITOR-PRINCIPAL)) ERR-NOT-AUTHORIZED)
-    (asserts! (is-some incident) ERR-ID-NOT-FOUND)
-
-    (asserts! (is-eq (get status (unwrap-panic incident)) REVEALED) ERR-INVALID-STATE)
-
-    (map-set incidents-data id (merge (unwrap-panic incident) {status: DISPUTED}))
-
-    (ok (print (tuple (event-name "Disputed") (id id) (reason-hash reason-hash))))
+  (let ((opt (map-get? incidents-data id)))
+    (unwrap! (assert-principal-is AUDITOR-PRINCIPAL) false)
+    (asserts! (is-some opt) ERR-ID-NOT-FOUND)
+    (let ((row (unwrap-panic opt)))
+      (asserts! (is-eq (get status row) REVEALED) ERR-INVALID-STATE)
+      (map-set incidents-data id (merge row {status: DISPUTED}))
+      (ok (print (tuple (event "Disputed") (id id) (reason-hash reason-hash))))
     )
+  )
 )
-
 
 (define-public (resolve-dispute
   (id uint)
-  (new-status uint) ;; Debería ser RESOLVED (u3) o STALE (u4) en el caso de no revelación a tiempo
+  (new-status uint) ;; debe ser RESOLVED u3 o STALE u4
 )
-(let (
-    (incident (map-get? incidents-data id))
+  (let ((opt (map-get? incidents-data id)))
+    (unwrap! (assert-principal-is AUDITOR-PRINCIPAL) false)
+    (asserts! (is-some opt) ERR-ID-NOT-FOUND)
+    (let ((row (unwrap-panic opt)))
+      (asserts! (is-eq (get status row) DISPUTED) ERR-INVALID-STATE)
+      (asserts! (or (is-eq new-status RESOLVED) (is-eq new-status STALE)) ERR-INVALID-STATE)
+      (map-set incidents-data id (merge row {status: new-status}))
+      (ok (print (tuple (event "Resolved") (id id) (new-status new-status))))
+    )
   )
-    ;; CAMBIO CRÍTICO #2: Se usa var-get para acceder a la dirección del auditor.
-    (asserts! (is-eq tx-sender (var-get AUDITOR-PRINCIPAL)) ERR-NOT-AUTHORIZED)
-    (asserts! (is-some incident) ERR-ID-NOT-FOUND)
-
-
-    (asserts! (is-eq (get status (unwrap-panic incident)) DISPUTED) ERR-INVALID-STATE)
-    (asserts! (or (is-eq new-status RESOLVED) (is-eq new-status STALE)) ERR-INVALID-STATE)
-
-    (map-set incidents-data id (merge (unwrap-panic incident) {status: new-status}))
-    
-    (ok (print (tuple (event-name "Resolved") (id id) (new-status new-status))))
-    ) 
 )
 
+;; ---------------------------
+;; Read-only
+;; ---------------------------
 
 (define-read-only (get-incident-by-id (id uint))
-    (ok (map-get? incidents-data id))
+  (ok (map-get? incidents-data id))
 )
 
-
-(define-read-only (get-reveal-deadline-min)
-    (ok (var-get reveal-deadline-min))
+(define-read-only (get-reveal-deadline-blocks)
+  (ok (var-get reveal-deadline-blocks))
 )
