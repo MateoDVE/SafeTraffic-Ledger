@@ -4,9 +4,9 @@ epoch = '2.4'
 clarity-version = 2
 
 [contracts]
-# ¡CAMBIO AQUÍ! Usa 'Contracts' con 'C' mayúscula
+# La C MAYÚSCULA es crucial aquí para que la plataforma web lo encuentre.
 incident_registry = { path = "Contracts/incident_registry.clar" } 
 
 [repl]
 enable_trace_strings = true
-pass_by-value = true
+pass_by_value = true
