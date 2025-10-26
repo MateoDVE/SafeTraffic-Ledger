@@ -11,7 +11,7 @@ cache_dir = "./.cache"
 # contract_id = "..." 
 
 [contracts.incident-registry]
-path = "contracts/incident_registry.clar"
+path = "SafeTraffic-Ledger\Back\Contracts\incident_registry.clar"
 clarity_version = 2 # Asumiendo Clarity 2, ya que Clarity 3 aún no es el estándar común.
 epoch = 2.4 # Estableciendo una epoch compatible con Clarity 2.
 
