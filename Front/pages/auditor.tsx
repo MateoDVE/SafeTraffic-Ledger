@@ -35,23 +35,6 @@ const demoDisputas = [
   },
 ];
 
-const demoDisputas = [
-  {
-    id: 'INC-2025-002',
-    tipo: 'Exceso de velocidad',
-    placa: 'XYZ-5678',
-    razon: 'Error en medición',
-    prioridad: 'Alta' as const,
-  },
-  {
-    id: 'INC-2025-008',
-    tipo: 'Colisión',
-    placa: 'MNO-2468',
-    razon: 'Responsabilidad disputada',
-    prioridad: 'Media' as const,
-  },
-];
-
 const demoPendientes = [{ id: 'INC-2025-010', tipo: 'Semáforo en rojo', placa: 'ABC-1111' }];
 
 function Pill({

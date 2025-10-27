@@ -22,7 +22,6 @@ export default function RevealPage() {
   const [busy, setBusy] = useState(false);
   const { doContractCall } = useConnect();
 
-  const { doContractCall } = useConnect();
   const { userSession } = useWallet();
   const userData = userSession.isUserSignedIn() ? userSession.loadUserData() : null;
   const senderAddress =

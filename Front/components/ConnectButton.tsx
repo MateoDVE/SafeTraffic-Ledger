@@ -12,8 +12,8 @@ export default function ConnectButton() {
       const userData = userSession.loadUserData();
       setAddr(
         userData.profile?.stxAddress?.testnet ||
-        userData.profile?.stxAddress?.mainnet ||
-        'Connected'
+          userData.profile?.stxAddress?.mainnet ||
+          'Connected'
       );
     }
   }, [userSession]);
@@ -30,10 +30,7 @@ export default function ConnectButton() {
   }
 
   return (
-    <button
-      onClick={() => doOpenAuth()}
-      className="px-4 py-2 bg-blue-500 text-white rounded"
-    >
+    <button onClick={() => doOpenAuth()} className="px-4 py-2 bg-blue-500 text-white rounded">
       Connect Wallet
     </button>
   );

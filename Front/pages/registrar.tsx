@@ -5,8 +5,7 @@ import { addIncident } from '../lib/store';
 
 import { useConnect } from '@stacks/connect-react';
 import { commitIncident } from '../lib/stacks';
-
-const { doContractCall } = useConnect();
+import { useWallet } from '../components/WalletProvider';
 
 const INCIDENT_TYPES: Record<string, number> = {
   Colisión: 1,
